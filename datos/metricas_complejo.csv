@@ -1,0 +1,2 @@
+log,exito,t_meta_s,long_planificada_m,long_ejecutada_m,err_ruta_medio_m,err_ruta_max_m,casi_colisiones,giros_innecesarios,err_odom_medio_m,err_odom_max_m,err_phi_medio_rad,std_ir_cruda,std_ir_filtrada,std_dist_kalman_m,fuente_trayectoria
+log_complejo_20260616_194811.csv,1,80.416,6.241601520528603,6.213200064057673,0.01302233963236097,0.05973070860026913,4,2,0.018696738959000876,0.04222033202143251,0.0017818302334784246,100.89007887439416,83.72306245039022,0.018878477223096567,ground-truth

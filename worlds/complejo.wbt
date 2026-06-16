@@ -1,0 +1,138 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/containers/protos/PlasticCrate.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.13678710049620982 0.9619552759491563 0.2364980680923676 1.0826916295796603
+  position -3.1241075416341784 -1.2015202002335772 4.513539851881734
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 3 3
+}
+Solid {
+  translation -0.8 -0.475 0.1
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.85 0.35 0.12
+        roughness 0.6
+      }
+      geometry Box {
+        size 0.2 2.05 0.2
+      }
+    }
+  ]
+  name "cfg_rect_0"
+  boundingObject Box {
+    size 0.2 2.05 0.2
+  }
+  locked TRUE
+}
+Solid {
+  translation -0.05 0.475 0.1
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.85 0.35 0.12
+        roughness 0.6
+      }
+      geometry Box {
+        size 0.2 2.05 0.2
+      }
+    }
+  ]
+  name "cfg_rect_1"
+  boundingObject Box {
+    size 0.2 2.05 0.2
+  }
+  locked TRUE
+}
+Solid {
+  translation 1.125 -0.2 0.1
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.85 0.35 0.12
+        roughness 0.6
+      }
+      geometry Box {
+        size 0.75 0.2 0.2
+      }
+    }
+  ]
+  name "cfg_rect_2"
+  boundingObject Box {
+    size 0.75 0.2 0.2
+  }
+  locked TRUE
+}
+Solid {
+  translation -0.25 -1.05 0.1
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.15 0.45 0.85
+        roughness 0.5
+      }
+      geometry Cylinder {
+        height 0.2
+        radius 0.16
+      }
+    }
+  ]
+  name "cfg_circulo_3"
+  boundingObject Cylinder {
+    height 0.2
+    radius 0.16
+  }
+  locked TRUE
+}
+Solid {
+  translation 1.05 0.75 0.1
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.15 0.45 0.85
+        roughness 0.5
+      }
+      geometry Cylinder {
+        height 0.2
+        radius 0.16
+      }
+    }
+  ]
+  name "cfg_circulo_4"
+  boundingObject Cylinder {
+    height 0.2
+    radius 0.16
+  }
+  locked TRUE
+}
+E-puck {
+  translation -1.3 -1.3 0
+  controller "epuck_navegacion"
+  controllerArgs [
+    "complejo"
+  ]
+  turretSlot [
+    Compass {
+    }
+    GPS {
+    }
+  ]
+  kinematic TRUE
+}
+PlasticCrate {
+  translation -0.53 0 0
+  size 0.2 0.2 0.2
+}
