@@ -8,7 +8,7 @@ sus mundos de Webots (.wbt). Toda constante del sistema vive aquí: no hay
 
 Sistema de coordenadas (SUPUESTO DOCUMENTADO):
     Se asume Webots moderno (R2022a o posterior) con coordenadas ENU:
-    plano del piso = X–Y, eje Z hacia arriba, y norte de la brújula = +X.
+    plano del piso = X–Y, eje Z hacia arriba, y norte de la brújula = +Y.
     Si tu mundo usa la convención antigua NUE (piso X–Z, Y arriba) debes
     migrar el mundo a ENU (recomendado) o adaptar `leer_pose_gt` en
     `epuck_navegacion.py` y el ajuste `CORRECCION_BRUJULA` más abajo.
@@ -21,8 +21,10 @@ import os
 # 1. PARÁMETROS FÍSICOS DEL E-PUCK
 #    (valores nominales del PROTO de Webots; verificar contra la documentación)
 # =============================================================================
-RADIO_RUEDA = 0.0205        # [m] radio de rueda r
-DIST_ENTRE_RUEDAS = 0.052   # [m] distancia entre ruedas L (eje)
+# Calibrados contra Webots e-puck con GPS/Compass como ground-truth.
+# Los valores nominales (0.0205, 0.052) hacían que la odometría sobre-rotara.
+RADIO_RUEDA = 0.019967      # [m] radio efectivo de rueda r
+DIST_ENTRE_RUEDAS = 0.0656  # [m] distancia efectiva entre ruedas L
 VEL_MAX_MOTOR = 6.28        # [rad/s] velocidad angular máxima de cada motor
 RADIO_ROBOT = 0.035         # [m] radio del cuerpo del e-puck
 
@@ -50,39 +52,38 @@ ESCENARIO_ACTIVO = "simple"   # <- cambiar a "complejo" para el segundo mundo
 
 ESCENARIOS = {
     # ---- Escenario 1: pocos obstáculos, ruta relativamente directa ----------
-    # Ejemplo pensado para una RectangleArena de 1 m x 1 m centrada en (0,0),
-    # una caja alargada en el centro y un obstáculo cilíndrico.
+    # Arena 3 m x 3 m centrada en (0,0), con una barrera central y un cilindro.
     "simple": {
-        "limites": {"x_min": -0.5, "x_max": 0.5, "y_min": -0.5, "y_max": 0.5},
+        "limites": {"x_min": -1.5, "x_max": 1.5, "y_min": -1.5, "y_max": 1.5},
         "resolucion": 0.02,                 # [m] tamaño de celda
-        "pose_inicial": (-0.40, -0.40, 0.0),
-        "meta": (0.40, 0.40),
+        "pose_inicial": (-1.25, -1.25, 0.0),
+        "meta": (1.25, 1.25),
         "inflar_bordes": True,              # tratar las paredes del arena como obstáculo
         "obstaculos": [
-            {"tipo": "rect", "x_min": -0.05, "x_max": 0.05,
-             "y_min": -0.30, "y_max": 0.30},
-            {"tipo": "circulo", "cx": 0.25, "cy": -0.10, "radio": 0.06},
+            {"tipo": "rect", "x_min": -0.12, "x_max": 0.12,
+             "y_min": -0.95, "y_max": 0.85},
+            {"tipo": "circulo", "cx": 0.75, "cy": 1.2, "radio": 0.18},
         ],
     },
     # ---- Escenario 2: pasillos angostos y rutas alternativas ----------------
     "complejo": {
-        "limites": {"x_min": -0.5, "x_max": 0.5, "y_min": -0.5, "y_max": 0.5},
+        "limites": {"x_min": -1.5, "x_max": 1.5, "y_min": -1.5, "y_max": 1.5},
         "resolucion": 0.02,
-        "pose_inicial": (-0.42, -0.42, 0.0),
-        "meta": (0.42, 0.42),
+        "pose_inicial": (-1.30, -1.30, 0.0),
+        "meta": (1.30, 1.30),
         "inflar_bordes": True,
         "obstaculos": [
             # muro vertical que nace en la pared inferior (paso por arriba)
-            {"tipo": "rect", "x_min": -0.30, "x_max": -0.20,
-             "y_min": -0.50, "y_max": 0.15},
+            {"tipo": "rect", "x_min": -0.90, "x_max": -0.70,
+             "y_min": -1.50, "y_max": 0.55},
             # muro vertical que nace en la pared superior (paso por abajo)
-            {"tipo": "rect", "x_min": 0.00, "x_max": 0.10,
-             "y_min": -0.15, "y_max": 0.50},
+            {"tipo": "rect", "x_min": -0.15, "x_max": 0.05,
+             "y_min": -0.55, "y_max": 1.50},
             # muro horizontal adosado a la pared derecha
-            {"tipo": "rect", "x_min": 0.30, "x_max": 0.50,
-             "y_min": -0.20, "y_max": -0.10},
-            {"tipo": "circulo", "cx": -0.05, "cy": -0.35, "radio": 0.05},
-            {"tipo": "circulo", "cx": 0.35, "cy": 0.20, "radio": 0.05},
+            {"tipo": "rect", "x_min": 0.75, "x_max": 1.50,
+             "y_min": -0.30, "y_max": -0.10},
+            {"tipo": "circulo", "cx": -0.25, "cy": -1.05, "radio": 0.16},
+            {"tipo": "circulo", "cx": 1.05, "cy": 0.75, "radio": 0.16},
         ],
     },
 }
@@ -142,9 +143,10 @@ TABLA_IR = [
 # =============================================================================
 # 7. GROUND-TRUTH
 # =============================================================================
-USAR_GT_PARA_CONTROL = False   # False: la navegación usa SOLO odometría (el GT
-                               # queda para registro/análisis). True: usa GT.
-CORRECCION_BRUJULA = 0.0       # [rad] offset si el norte del mundo no es +X
+USAR_GT_PARA_CONTROL = False   # False: controla solo con odometría. True:
+                               # si hay GPS/Compass, controla con pose GT
+                               # y registra odometría para análisis.
+CORRECCION_BRUJULA = 0.0       # [rad] offset si la orientación de GT queda corrida
 
 # =============================================================================
 # 8. RUTAS DE ARCHIVOS Y VARIOS

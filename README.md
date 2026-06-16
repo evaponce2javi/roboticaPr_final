@@ -32,16 +32,16 @@ Se utiliza el **e-puck** estándar de Webots (PROTO `E-puck`), un robot diferenc
 
 Parámetros físicos usados (editables en `config.py`): radio de rueda `r = 0.0205 m`, distancia entre ruedas `L = 0.052 m`, radio del cuerpo `0.035 m`, paso de simulación = `basicTimeStep` del mundo.
 
-El sistema **degrada con gracia**: si el mundo no tiene GPS/Compass, navega solo con odometría y lo informa en consola; las métricas que dependen de ground-truth simplemente se omiten en el análisis.
+En los mundos incluidos, el robot controla con odometría de encoders; el GPS/Compass queda para ground-truth y análisis. El sistema **degrada con gracia**: si el mundo no tiene GPS/Compass, navega igual con odometría y lo informa en consola; las métricas que dependen de ground-truth simplemente se omiten en el análisis.
 
 ## 5. Escenarios de prueba
 
-Los mundos `.wbt` los crea el usuario (ver sección 11) y se describen en `config.py` mediante límites del arena, resolución de celda, pose inicial, meta y lista de obstáculos (rectángulos y círculos en coordenadas de mundo). Se incluyen dos configuraciones de ejemplo para una `RectangleArena` de 1 m × 1 m centrada en el origen:
+Los mundos `.wbt` se describen en `config.py` mediante límites del arena, resolución de celda, pose inicial, meta y lista de obstáculos (rectángulos y círculos en coordenadas de mundo). Se incluyen dos mundos para una `RectangleArena` de 3 m × 3 m centrada en el origen; `config.py` es la fuente de verdad para los obstáculos.
 
-1. **`simple`** — una caja alargada en el centro y un cilindro; existe una ruta relativamente directa de la esquina inferior-izquierda `(−0.40, −0.40)` a la superior-derecha `(0.40, 0.40)`.
-2. **`complejo`** — tres muros que nacen de las paredes formando pasillos en "S" más dos cilindros; obliga al planificador a alternar pasos por arriba y por abajo entre inicio `(−0.42, −0.42)` y meta `(0.42, 0.42)`.
+1. **`simple`** — una barrera central y un cilindro; existe una ruta relativamente directa de la esquina inferior-izquierda `(−1.25, −1.25)` a la superior-derecha `(1.25, 1.25)`.
+2. **`complejo`** — tres muros que nacen de las paredes formando pasillos en "S" más dos cilindros; obliga al planificador a alternar pasos por arriba y por abajo entre inicio `(−1.30, −1.30)` y meta `(1.30, 1.30)`.
 
-Cambiar de escenario no toca la lógica: basta editar `ESCENARIO_ACTIVO` en `config.py`.
+Cambiar de escenario no toca la lógica: abrir `worlds/simple.wbt` o `worlds/complejo.wbt` pasa el nombre del escenario al controlador. `ESCENARIO_ACTIVO` en `config.py` queda como respaldo si el controlador se ejecuta sin argumentos.
 
 <!-- COMPLETAR: si tus .wbt difieren de los ejemplos, describe aquí tus escenarios reales y actualiza config.py en consecuencia -->
 
@@ -54,7 +54,7 @@ Cambiar de escenario no toca la lógica: basta editar `ESCENARIO_ACTIVO` en `con
 
 ### 6.2 Grilla de ocupación e inflado (`grilla.py`)
 
-El arena se discretiza en celdas cuadradas de **0.02 m** (grilla 50×50 en 1 m²). Esta resolución equilibra fidelidad geométrica (los pasillos del escenario complejo se representan bien) y costo de A\* (2 500 nodos se exploran en milisegundos). Los obstáculos se rasterizan de forma **conservadora** (una celda tocada parcialmente se marca ocupada) y luego la grilla se **infla** por dilatación con un disco de radio `RADIO_ROBOT + MARGEN_SEGURIDAD = 0.035 + 0.015 = 0.05 m`. Con esto se planifica en el **espacio de configuración**: el robot puede tratarse como un punto y toda ruta tiene holgura garantizada. Los bordes del arena también se inflan (`inflar_bordes`).
+El arena se discretiza en celdas cuadradas de **0.02 m** (grilla 150×150 en 3 m × 3 m). Esta resolución equilibra fidelidad geométrica (los pasillos del escenario complejo se representan bien) y costo de A\* (22 500 nodos se exploran rápidamente). Los obstáculos se rasterizan de forma **conservadora** (una celda tocada parcialmente se marca ocupada) y luego la grilla se **infla** por dilatación con un disco de radio `RADIO_ROBOT + MARGEN_SEGURIDAD = 0.035 + 0.015 = 0.05 m`. Con esto se planifica en el **espacio de configuración**: el robot puede tratarse como un punto y toda ruta tiene holgura garantizada. Los bordes del arena también se inflan (`inflar_bordes`).
 
 ### 6.3 A\* (`planificador.py`)
 
@@ -214,11 +214,11 @@ Tras ejecutar `analisis/analizar.py` se generan en `figuras/` (por escenario):
 - **Webots R2023b o posterior** (coordenadas ENU: piso X–Y, Z arriba).
 - **Python 3.8+** con `numpy` (controlador) y `matplotlib` (análisis): `pip install -r requirements.txt`.
 
-### Paso 1 — Crear los mundos
+### Paso 1 — Abrir los mundos
 
-1. Mundo nuevo en Webots con `RectangleArena` (1 m × 1 m para usar las configuraciones de ejemplo).
-2. Añadir los obstáculos (cajas/cilindros) **en las mismas posiciones declaradas en `config.py`**, o editar `config.py` para reflejar tus obstáculos.
-3. Añadir un nodo `E-puck` con `translation` y `rotation` coincidentes con `pose_inicial` (φ = 0 → robot mirando +X con `rotation 0 0 1 0`).
+1. Abrir `worlds/simple.wbt` o `worlds/complejo.wbt`, ambos con `RectangleArena` de 3 m × 3 m.
+2. Si agregas obstáculos planificados, edita primero `config.py` y regenera los mundos con `python worlds\generar_mundos.py`.
+3. Verificar que el nodo `E-puck` tenga `translation` y `rotation` coincidentes con `pose_inicial` (φ = 0 → robot mirando +X con `rotation 0 0 1 0`).
 4. En el e-puck, fijar `controller` = **`epuck_navegacion`**.
 5. *(Recomendado para ground-truth)* En `turretSlot` del e-puck añadir un `GPS` llamado `gps` y un `Compass` llamado `compass`. Sin ellos el sistema navega igual, solo con odometría.
 6. Guardar el `.wbt` en `worlds/`.
@@ -227,7 +227,8 @@ Tras ejecutar `analisis/analizar.py` se generan en `figuras/` (por escenario):
 
 Editar `controllers/epuck_navegacion/config.py`:
 
-- `ESCENARIO_ACTIVO = "simple"` o `"complejo"`.
+- `ESCENARIO_ACTIVO = "simple"` o `"complejo"` solo si ejecutas el controlador sin `controllerArgs`.
+- `USAR_GT_PARA_CONTROL = False` para ensayos de odometría pura; cambiar a `True` solo para depurar contra ground-truth.
 - Ajustar `limites`, `pose_inicial`, `meta` y `obstaculos` del escenario a tu `.wbt`.
 - *(Opcional)* calibrar `TABLA_IR` contra la `lookupTable` del PROTO de tu versión de Webots.
 
