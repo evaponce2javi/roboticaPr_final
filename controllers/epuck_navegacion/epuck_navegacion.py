@@ -22,6 +22,7 @@ en consola y con columnas GT vacías en el CSV).
 import datetime
 import math
 import os
+import sys
 
 from controller import Robot  # API de Webots (disponible solo dentro de Webots)
 
@@ -90,22 +91,21 @@ def inicializar_dispositivos(robot, timestep):
 def leer_pose_gt(gps, brujula):
     """Pose ground-truth (x, y, phi) con GPS + Compass en mundo ENU.
 
-    Supuesto: norte de la brújula = +X del mundo. El Compass entrega el vector
-    norte expresado en el marco del robot; con norte = +X, la orientación es
-    phi = −atan2(c_y, c_x). Ajustar `cfg.CORRECCION_BRUJULA` si tu WorldInfo
-    define otro norte.
+    En ENU, Webots define el norte como +Y. El Compass entrega ese vector norte
+    expresado en el marco del robot. Como este proyecto mide phi desde +X, la
+    orientación del robot es phi = atan2(c_x, c_y).
     """
     pos = gps.getValues()
     c = brujula.getValues()
-    phi = normalizar_angulo(-math.atan2(c[1], c[0]) + cfg.CORRECCION_BRUJULA)
+    phi = normalizar_angulo(math.atan2(c[0], c[1]) + cfg.CORRECCION_BRUJULA)
     return (pos[0], pos[1], phi)
 
 
 def main():
     robot = Robot()
     timestep = int(robot.getBasicTimeStep())
-    nombre_escenario = cfg.ESCENARIO_ACTIVO
-    escenario = cfg.obtener_escenario()
+    nombre_escenario = sys.argv[1] if len(sys.argv) > 1 else cfg.ESCENARIO_ACTIVO
+    escenario = cfg.obtener_escenario(nombre_escenario)
 
     dispositivos = inicializar_dispositivos(robot, timestep)
     # un paso de simulación para que los sensores entreguen lecturas válidas
