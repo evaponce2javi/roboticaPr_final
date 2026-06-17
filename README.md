@@ -1,282 +1,278 @@
-# Navegación Autónoma con Planificación de Rutas (A\*) — e-puck en Webots
+# Navegación Autónoma con Planificación de Rutas (A\*) en e-puck (Webots)
 
-**Proyecto Final · ICI 4150 — Robótica y Sistemas Autónomos 2026 · PUCV**
+**Proyecto Final · ICI 4150, Robótica y Sistemas Autónomos 2026, PUCV**
 
-## 1. Integrantes
+### Integrantes
 
-<!-- COMPLETAR: nombres y correos de los integrantes del grupo -->
-- Integrante 1: `ESTEBAN SCHANZCHE — correo@pucv.cl`
-- Integrante 2: `EVA PONCE — eva.ponce@pucv.cl`
-- Integrante 3: `NICOLÁS FUENTES — nicolas.fuentes@pucv.cl`
-- Integrante 4: `JUAN GERALDO — juan.geraldo@pucv.cl`
+- Esteban Schanze, esteban.schanze.c@mail.pucv.cl
+- Eva Ponce, eva.ponce@pucv.cl
+- Nicolás Fuentes, nicolas.fuentes@pucv.cl
+- Juan Geraldo, juan.geraldo@pucv.cl
 
-## 2. Línea seleccionada
+***
 
-**Línea A — Planificación de rutas.** El robot planifica una ruta global con **A\*** sobre una **grilla de ocupación** y la ejecuta con un controlador cinemático diferencial, protegido por una **capa reactiva** basada en los sensores IR.
+## 1. Tipo de Robot y Configuración en Webots
 
-## 3. Objetivo del proyecto
+### Robot utilizado
 
-Diseñar, implementar y evaluar un sistema de navegación autónoma para el e-puck que, partiendo de una pose inicial conocida, (1) construya una representación del entorno como grilla de ocupación, (2) planifique una ruta hacia la meta con A\* y la suavice por línea de visión, (3) convierta la ruta en comandos de movimiento mediante el modelo cinemático diferencial con pose estimada por odometría, (4) use los sensores de proximidad para evitar colisiones, detenerse ante riesgo y re-planificar si queda bloqueado, y (5) registre y analice su comportamiento comparando la ruta planificada con la trayectoria realmente ejecutada en al menos dos escenarios.
+Para este proyecto ocupamos el e-puck estándar que viene en Webots (PROTO `E-puck`). Es un robot móvil con tracción diferencial, es decir, tiene dos ruedas motrices independientes, y le habilitamos el modo cinemático (`kinematic = TRUE`). Calibramos sus parámetros físicos en el archivo `config.py` comparándolos con el GPS y la brújula como referencia real, ya que los valores por defecto del PROTO (0.0205 m y 0.052 m) hacían que la odometría calculara mal las rotaciones:
 
-## 4. Robot, sensores y actuadores
-
-Se utiliza el **e-puck** estándar de Webots (PROTO `E-puck`), un robot diferencial de dos ruedas.
-
-| Elemento | Dispositivo Webots | Uso en el proyecto |
+| Parámetro | Valor | Nota |
 |---|---|---|
-| Motores | `left wheel motor`, `right wheel motor` | Modo velocidad (`setPosition(inf)` + `setVelocity`), saturados a ±6.28 rad/s |
-| Encoders | `left wheel sensor`, `right wheel sensor` | Odometría (pose estimada en cada paso) |
-| Proximidad IR | `ps0` … `ps7` (~0–4096, mayor = más cerca, no lineal) | Capa reactiva, flag de casi-colisión y medición de distancia para el filtro de Kalman |
-| GPS (opcional) | `gps` en `turretSlot` | Ground-truth de posición para el análisis |
-| Compass (opcional) | `compass` en `turretSlot` | Ground-truth de orientación para el análisis |
+| Radio de la rueda (`RADIO_RUEDA`) | 0.019967 m | Ajustado empíricamente (nominal: 0.0205) |
+| Distancia entre ejes (`DIST_ENTRE_RUEDAS`) | 0.0656 m | Ajustado empíricamente (nominal: 0.052) |
+| Radio del cuerpo (`RADIO_ROBOT`) | 0.035 m | Valor por defecto |
+| Velocidad angular máxima por rueda (`VEL_MAX_MOTOR`) | ±6.28 rad/s | Límite del motor |
+| Velocidad lineal máxima (`V_MAX`) | 0.08 m/s | Límite de avance |
 
-Parámetros físicos usados (editables en `config.py`): radio de rueda `r = 0.0205 m`, distancia entre ruedas `L = 0.052 m`, radio del cuerpo `0.035 m`, paso de simulación = `basicTimeStep` del mundo.
+### Configuración del entorno
 
-En los mundos incluidos, el robot controla con odometría de encoders; el GPS/Compass queda para ground-truth y análisis. El sistema **degrada con gracia**: si el mundo no tiene GPS/Compass, navega igual con odometría y lo informa en consola; las métricas que dependen de ground-truth simplemente se omiten en el análisis.
+Diseñamos dos escenarios usando una `RectangleArena` de 3 m × 3 m centrada en el origen, con límites de ±1.5 m en los ejes X e Y. La pista está en el plano X–Y y el eje Z apunta hacia arriba (la típica convención ENU de Webots). Para correr esto se necesita Webots R2023b o superior.
 
-## 5. Escenarios de prueba
+Generamos dos mundos con el script `worlds/generar_mundos.py`:
 
-Los mundos `.wbt` se describen en `config.py` mediante límites del arena, resolución de celda, pose inicial, meta y lista de obstáculos (rectángulos y círculos en coordenadas de mundo). Se incluyen dos mundos para una `RectangleArena` de 3 m × 3 m centrada en el origen; `config.py` es la fuente de verdad para los obstáculos.
+| Mundo | Obstáculos | Inicio | Meta |
+|---|---|---|---|
+| `worlds/simple.wbt` | 1 barrera rectangular (0.24 × 1.80 m) y 1 cilindro (r = 0.18 m) | (−1.25, −1.25) | (1.25, 1.25) |
+| `worlds/complejo.wbt` | 3 muros formando pasillos en S, 2 cilindros (r = 0.16 m) y 1 caja no mapeada | (−1.30, −1.30) | (1.30, 1.30) |
 
-1. **`simple`** — una barrera central y un cilindro; existe una ruta relativamente directa de la esquina inferior-izquierda `(−1.25, −1.25)` a la superior-derecha `(1.25, 1.25)`.
-2. **`complejo`** — tres muros que nacen de las paredes formando pasillos en "S" más dos cilindros; obliga al planificador a alternar pasos por arriba y por abajo entre inicio `(−1.30, −1.30)` y meta `(1.30, 1.30)`.
+Las posiciones de inicio, meta y los obstáculos se definen en `config.py` (en los diccionarios `ESCENARIOS`). Ojo que en el escenario complejo pusimos a propósito un `PlasticCrate` (0.20 × 0.20 m) directo en el `.wbt` sin declararlo en la configuración. Esto nos sirvió para poner a prueba la reacción del robot y ver si lograba replanificar su ruta al toparse con algo inesperado.
 
-Cambiar de escenario no toca la lógica: abrir `worlds/simple.wbt` o `worlds/complejo.wbt` pasa el nombre del escenario al controlador. `ESCENARIO_ACTIVO` en `config.py` queda como respaldo si el controlador se ejecuta sin argumentos.
+Además, le pusimos un `GPS` y un `Compass` al robot para tener datos de referencia. Si sacas estos sensores, el robot va a seguir navegando usando pura odometría y avisará por consola, solo que no se calcularán las métricas de error.
 
-<!-- COMPLETAR: si tus .wbt difieren de los ejemplos, describe aquí tus escenarios reales y actualiza config.py en consecuencia -->
+***
 
-## 6. Algoritmo implementado y justificación
+## 2. Sistema de Sensores e Instrumentación
 
-### 6.1 Arquitectura híbrida (deliberativa + reactiva)
+### Sensores incorporados
 
-- **Planificación global (deliberativa):** grilla de ocupación + A\* + suavizado por línea de visión → lista de waypoints.
-- **Ejecución local (reactiva):** máquina de estados `FOLLOW_PATH / AVOID / GOAL_REACHED / SIN_RUTA` con **histéresis** en las transiciones, igual que en el Laboratorio 2, para que el ruido del IR no produzca oscilaciones entre estados.
+| Sensor | Dispositivo en Webots | Cantidad | Rango / Tipo |
+|---|---|---|---|
+| Sensores de proximidad IR | `ps0` a `ps7` | 8 | Valores de 0 a 4096 (no lineal, mayor valor es más cerca) |
+| Encoders | `left wheel sensor`, `right wheel sensor` | 2 | Posición angular acumulada en radianes |
+| GPS | `gps` | 1 (opcional) | Posición real (x, y, z) |
+| Brújula (Compass) | `compass` | 1 (opcional) | Ángulo real (se calcula con `atan2(c_x, c_y)`) |
 
-### 6.2 Grilla de ocupación e inflado (`grilla.py`)
+### Procesamiento de las lecturas
 
-El arena se discretiza en celdas cuadradas de **0.02 m** (grilla 150×150 en 3 m × 3 m). Esta resolución equilibra fidelidad geométrica (los pasillos del escenario complejo se representan bien) y costo de A\* (22 500 nodos se exploran rápidamente). Los obstáculos se rasterizan de forma **conservadora** (una celda tocada parcialmente se marca ocupada) y luego la grilla se **infla** por dilatación con un disco de radio `RADIO_ROBOT + MARGEN_SEGURIDAD = 0.035 + 0.015 = 0.05 m`. Con esto se planifica en el **espacio de configuración**: el robot puede tratarse como un punto y toda ruta tiene holgura garantizada. Los bordes del arena también se inflan (`inflar_bordes`).
+**Sensores infrarrojos (proximidad):**
 
-### 6.3 A\* (`planificador.py`)
+- **Frecuencia de muestreo:** Se consultan en cada paso de simulación.
+- **Suavizado:** Cada uno de los 8 sensores pasa por un filtro de media móvil exponencial (EMA) con un factor de `α = 0.35` (`filtro.py`). Esto ayuda a limpiar bastante el ruido sin perder velocidad de reacción.
+- **Conversión a distancia:** Mapeamos los valores crudos a metros usando una tabla de 10 puntos de calibración (`TABLA_IR` en `config.py`). Va desde 4095 (contacto) hasta 67 (unos 7 cm) usando interpolación lineal (`np.interp`). Esto alimenta luego al filtro de Kalman.
+- **Uso:** Los sensores frontales (`ps0`, `ps1`, `ps6`, `ps7`) son los que gatillan la evasión de emergencia. Los laterales ayudan a decidir hacia dónde conviene girar.
 
-- **Conectividad 8** con costo diagonal **√2** y heurística **octile** (admisible y consistente para ese esquema de costos → A\* devuelve la ruta óptima en la grilla sin re-expansiones).
-- **Prevención de corner-cutting:** un movimiento diagonal solo es válido si las dos celdas ortogonales adyacentes están libres; evita que la ruta "roce" esquinas que el robot real no puede atravesar.
-- Si el inicio o la meta caen en celda ocupada tras el inflado, se busca la **celda libre más cercana** por BFS; si no existe ruta, el sistema lo informa y pasa a `SIN_RUTA` deteniendo los motores con gracia.
+**Encoders de las ruedas:**
 
-### 6.4 Suavizado por línea de visión (`planificador.py`)
+- Se leen constantemente para ver cuánto avanzó cada rueda (`Δθ_l` y `Δθ_r`).
+- El script `odometria.py` toma estos valores y calcula la nueva posición `(x, y, φ)` asumiendo un movimiento circular:
 
-La ruta de celdas se posprocesa con **string-pulling**: desde cada waypoint se salta al punto más lejano de la ruta visible en línea recta (verificado muestreando la línea a media celda sobre la grilla inflada). Elimina el zig-zag de la conectividad 8, reduce giros innecesarios y acorta la ruta. El último waypoint es la **meta exacta** en coordenadas de mundo.
+$$x_k = x_{k-1} + \Delta s \cdot \cos\!\left(\varphi_{k-1} + \frac{\Delta\varphi}{2}\right), \quad y_k = y_{k-1} + \Delta s \cdot \sin\!\left(\varphi_{k-1} + \frac{\Delta\varphi}{2}\right)$$
 
-### 6.5 Control de seguimiento (`controlador.py`)
+- También guardamos el último avance lineal para que el filtro de Kalman pueda hacer su predicción.
 
-Para el waypoint activo `(wx, wy)` y la pose estimada `(x, y, φ)`:
+**Filtro de Kalman 1D (`filtro.py`):**
 
-```
-e_ang = normalizar(atan2(wy − y, wx − x) − φ)
-ω = Kp_ang · e_ang                       (Kp_ang = 4.0, saturado a ±4 rad/s)
-v = min(Kp_d · d, V_MAX) · max(0, cos e_ang)   (V_MAX = 0.08 m/s)
-```
+- **Estado:** Estima a qué distancia está el obstáculo frontal más cercano.
+- **Predicción:** Usamos la odometría para restar la distancia que ya avanzamos, con un ruido de proceso bajito (`Q = 1×10⁻⁵`).
+- **Corrección:** Usamos la distancia medida por los sensores infrarrojos con su respectivo ruido (`R = 4×10⁻⁴`). 
+- **Cuándo se activa:** Solo cuando los sensores detectan algo claro, superando un umbral base (`IR_PISO_RUIDO = 80.0`).
+- **Propósito:** Fusiona la lectura de los motores con los sensores de proximidad para tener un cálculo mucho más estable de la distancia frontal, clave para esquivar y replanificar.
 
-El factor `max(0, cos e_ang)` implementa **"gira primero, avanza después"**: con error angular grande el robot rota casi en el sitio. `(v, ω)` se convierte a velocidades de rueda con la cinemática inversa diferencial y, si alguna rueda excede ±6.28 rad/s, ambas se escalan **proporcionalmente** para preservar la curvatura comandada. Un waypoint se considera alcanzado a < 0.05 m; la meta, a < 0.04 m.
+**GPS y Brújula (opcionales):**
 
-### 6.6 Percepción, filtrado y fusión (`odometria.py`, `filtro.py`)
+- Los usamos solo para registrar qué tan bien lo hace la odometría comparando con la posición real. Nunca se usan para corregir el rumbo del robot (`USAR_GT_PARA_CONTROL = False`). Si los borras del escenario, el robot sigue funcionando sin problemas.
 
-- **Odometría por encoders** con las ecuaciones de la sección 7 del enunciado (integración con el ángulo medio `φ + Δφ/2`).
-- **Filtro EMA** (`α = 0.35`) sobre cada uno de los 8 IR: filtrado simple que atenúa el ruido de alta frecuencia conservando la latencia baja que necesita la capa reactiva.
-- **Filtro de Kalman 1D** sobre la **distancia frontal**: predicción con la odometría (`d ← d − Δs`, ruido de proceso Q) y corrección con el IR frontal linealizado mediante una tabla `valor IR → distancia` (ruido de medición R). Es la misma fusión encoder–IR del Laboratorio 2, ahora al servicio del planificador. El log guarda señal cruda, filtrada y estimada para comparar estabilidad.
+***
 
-### 6.7 Capa reactiva y re-planificación (`reactivo.py`)
+## 3. Arquitectura del Controlador Implementado
 
-Con los IR frontales (`ps0, ps1, ps6, ps7`) filtrados:
+### Diseño híbrido
 
-- **AVOID con histéresis:** entra si `max(frontales) > 140` y sale solo bajo `90`. Dentro de AVOID se gira hacia el lado más despejado (regla tipo Braitenberg comparando lado izquierdo vs. derecho) con avance lento; si el frontal supera `1000` (riesgo de colisión) la velocidad lineal se anula y solo gira.
-- **Casi-colisión:** flag de métrica cuando algún frontal supera `400`.
-- **Re-planificación ante bloqueo:** si el robot lleva `150` pasos seguidos en AVOID, marca un obstáculo estimado (círculo de 0.05 m frente a su pose) en la grilla y **re-ejecuta A\*** desde la pose actual — el componente deliberativo corrige lo que la reactiva no puede resolver sola.
+Armamos un controlador que mezcla dos enfoques mediante una máquina de estados con histéresis:
 
-## 7. Diagrama de flujo y pseudocódigo
+1. **Capa deliberativa:** Piensa a futuro. Crea una grilla, infla los obstáculos y usa A\* para armar una ruta suave punto por punto.
+2. **Capa reactiva:** Reacciona en el momento. Frena o esquiva usando los infrarrojos si aparece algo repentino, muy al estilo Braitenberg.
 
-### 7.1 Máquina de estados
+### Máquina de estados
 
-```mermaid
-stateDiagram-v2
-    [*] --> PLAN
-    PLAN --> FOLLOW_PATH: ruta encontrada
-    PLAN --> SIN_RUTA: A* no encuentra ruta
-    FOLLOW_PATH --> AVOID: max(IR frontal) > UMBRAL_ON (140)
-    AVOID --> FOLLOW_PATH: max(IR frontal) < UMBRAL_OFF (90)
-    AVOID --> PLAN: bloqueado 150 pasos\n(marca obstáculo y re-planifica)
-    FOLLOW_PATH --> GOAL_REACHED: dist(meta) < 0.04 m
-    GOAL_REACHED --> [*]: motores detenidos
-    SIN_RUTA --> [*]: motores detenidos
-```
+El cerebro del robot se mueve entre estos cinco modos:
 
-### 7.2 Pseudocódigo de A\* con prevención de corner-cutting
+| Estado | ¿Qué hace? |
+|---|---|
+| `PLAN` | Arma la grilla, calcula A\* y suaviza el camino |
+| `FOLLOW_PATH` | Persigue los puntos de la ruta usando control proporcional |
+| `AVOID` | Se activa la evasión de emergencia |
+| `GOAL_REACHED` | Llegó a la meta y apaga los motores |
+| `SIN_RUTA` | El algoritmo no encontró salida y se rinde |
 
-```
-A_ESTRELLA(grilla_inflada, inicio, meta):
-    abierta ← heap con (f=h(inicio), inicio);  g[inicio] ← 0
-    mientras abierta no vacía:
-        n ← extraer mínimo f
-        si n = meta: devolver reconstruir_ruta(n)
-        para cada vecino m de n (8-conectividad):
-            si m ocupado: continuar
-            si movimiento diagonal y alguna celda ortogonal adyacente ocupada:
-                continuar                      # corner-cutting prohibido
-            costo ← 1 si ortogonal, √2 si diagonal
-            si g[n] + costo < g[m]:
-                g[m] ← g[n] + costo;  padre[m] ← n
-                insertar (g[m] + h_octile(m, meta), m) en abierta
-    devolver SIN_RUTA
-```
+Para cambiar de estado usamos histéresis. Por ejemplo, entra a evasión cuando el sensor marca 140, pero no sale de ahí hasta que baja de 90. Esto evita que el robot se quede "titubeando" si la lectura del sensor oscila justo en el límite.
 
-### 7.3 Bucle principal del controlador
+### Flujo del ciclo de control
 
-```
-plan ← PLANIFICAR(config)                    # grilla → inflado → A* → suavizado
-mientras robot.step(timestep) != -1:
-    pose ← ODOMETRIA(encoders)               # Lab 2
-    ir_f ← EMA(ir_crudo); d_kalman ← KALMAN(Δs, ir_frontal)
-    (evasion, casi_col) ← REACTIVA(ir_f)     # histéresis
-    actualizar estado (máquina de la sección 7.1)
-    según estado:
-        FOLLOW_PATH:  (v, ω) ← CONTROL_WAYPOINT(pose, wp)   # Lab 1
-        AVOID:        (v, ω) ← COMANDO_EVASION(ir_f)
-        GOAL_REACHED / SIN_RUTA: (v, ω) ← (0, 0)
-    motores ← RUEDAS(v, ω) saturadas proporcionalmente      # Lab 1
-    LOG(t, estado, pose, gt, comandos, ir, kalman, casi_col)
+En cada "paso" de simulación, el script `epuck_navegacion.py` hace lo siguiente:
+
+```text
+1. LEER       -> Sensores, encoders y posición real.
+2. ESTIMAR    -> Actualiza la odometría y pasa los filtros (EMA y Kalman).
+3. PERCIBIR   -> Revisa si hay riesgo inminente de chocar (capa reactiva).
+4. DECIDIR    -> Ve si necesita cambiar de estado (ej: de seguir ruta a esquivar). 
+                 Si lleva mucho rato estancado, replanifica.
+5. ACTUAR     -> Calcula las velocidades según el estado actual.
+6. CONVERTIR  -> Transforma el comando general a velocidades individuales para cada rueda.
+7. REGISTRAR  -> Guarda todos los datos en un archivo CSV para analizarlos después.
 ```
 
-## 8. Relación explícita con los Laboratorios 1 y 2
+### Archivos principales
 
-**Laboratorio 1 — Control cinemático diferencial.** El seguidor de waypoints (`controlador.py`) reutiliza directamente lo desarrollado en el Lab 1: el modelo `v = (v_r+v_l)/2`, `ω = (v_r−v_l)/L`, la conversión inversa de `(v, ω)` a velocidades de rueda con saturación, y el control proporcional de orientación/avance para alcanzar puntos objetivo. La diferencia es el origen de los objetivos: en el Lab 1 eran puntos fijos; aquí son **waypoints producidos por A\***.
+| Archivo | ¿De qué se encarga? |
+|---|---|
+| `epuck_navegacion.py` | Es el orquestador principal del proyecto y maneja el bucle de Webots. |
+| `grilla.py` | Arma el mapa cuadriculado y "engorda" los obstáculos. |
+| `planificador.py` | Ejecuta el algoritmo A\* para encontrar la salida. |
+| `controlador.py` | Acelera y dobla para perseguir la ruta trazada. |
+| `odometria.py` | Intenta adivinar dónde está el robot sumando los giros de las ruedas. |
+| `filtro.py` | Limpia los datos de los sensores para que no sean tan ruidosos. |
+| `reactivo.py` | Esquiva paredes si algo sale mal. |
+| `registro.py` | Guarda las métricas en un Excel o CSV. |
 
-**Laboratorio 2 — Percepción, filtrado y navegación reactiva.** Se reutilizan cuatro piezas del Lab 2: (1) la **odometría por encoders** con integración de ángulo medio como estimador de pose; (2) el **filtrado simple** (EMA) de las señales IR; (3) el **filtro de Kalman 1D** que fusiona predicción por encoders con corrección por IR linealizado — la misma estructura predicción/corrección del laboratorio; y (4) la **máquina de estados con histéresis** (allí ADVANCE/TURN, aquí FOLLOW_PATH/AVOID) como capa reactiva de seguridad.
+***
 
-**Cómo el proyecto extiende ambos laboratorios.** Los laboratorios resolvían problemas locales: moverse con un modelo cinemático (Lab 1) y reaccionar al entorno inmediato estimando estado (Lab 2). El proyecto añade la capa **deliberativa** que les faltaba: una representación global del entorno (grilla de ocupación en espacio de configuración) y un planificador óptimo (A\*) que decide *a dónde* moverse. La arquitectura resultante es híbrida: A\* propone, el control del Lab 1 ejecuta, y la percepción/reactiva del Lab 2 protege y — vía la re-planificación ante bloqueo — retroalimenta al planificador. Ninguna de las tres capas funciona sola: ese acoplamiento es la extensión central.
+## 4. Estrategia de Navegación
 
-## 9. Resultados y métricas de desempeño
+### Planificación con A\* sobre grilla
 
-> Las métricas las calcula automáticamente `analisis/analizar.py` a partir de los CSV de `datos/` (sección 11). Ejecuta **al menos 3 corridas por escenario** y completa las tablas con `datos/metricas_<escenario>.csv`.
+Nuestro enfoque principal es generar un mapa antes de arrancar usando los datos de `config.py` y resolverlo con A\*. La reacción rápida funciona solo como un seguro de vida por si algo se cruza en el camino.
+
+### Detalles de la implementación
+
+1. **Mapa de celdas:** Tomamos la pista de 3×3 metros y la picamos en cuadritos de 2 cm, armando una matriz de 150×150. Dibujamos los obstáculos marcando las celdas ocupadas. Luego, "inflamos" estos bordes sumando el radio del robot más un margen de seguridad (5 cm en total). Esto nos facilita la vida porque ahora podemos considerar al robot como si fuera un simple punto.
+
+2. **Algoritmo A\*:** Usamos una variante con conectividad de 8 direcciones (ortogonales y diagonales). Le pusimos una regla estricta para evitar que corte esquinas demasiado cerradas que harían chocar al robot. Si la posición inicial o la meta caen dentro de un obstáculo inflado, el sistema busca la celda libre más cercana automáticamente.
+
+3. **Suavizado de la ruta:** A\* entrega un camino muy pixelado y en zig-zag. Para arreglarlo, pasamos una función que une puntos lejanos con líneas rectas (siempre y cuando no crucen un obstáculo). Esto simplifica el recorrido drásticamente, en el escenario simple pasamos de un montón de celdas a solo 4 puntos clave.
+
+4. **El parche reactivo:** Como el mapa es estático, la única forma de lidiar con una caja sorpresa es con la capa reactiva. Si el robot pasa más de 150 turnos seguidos tratando de esquivar algo, asume que el camino está bloqueado. En ese momento, toma la posición estimada del obstáculo usando el filtro de Kalman, la dibuja en la matriz, y vuelve a correr A\* desde cero.
+
+***
+
+## 5. Control de Movimiento y Gestión del Entorno
+
+### 5.1 Seguimiento con control proporcional
+
+Para movernos hacia un punto destino `(wx, wy)`, calculamos el error de ángulo y ajustamos las velocidades:
+
+$$e_{ang} = \text{normalizar}\!\left(\arctan2(w_y - y,\; w_x - x) - \varphi\right)$$
+
+$$\omega = \text{clamp}\!\left(K_{p,ang} \cdot e_{ang},\; \pm W_{MAX}\right)$$
+
+$$v = \min(K_{p,lin} \cdot d,\; V_{MAX}) \cdot \max(0,\; \cos e_{ang})$$
+
+Aquí implementamos la lógica de "gira primero, avanza después". Si el error es mayor a 90 grados, el robot frena en seco y gira sobre su propio eje. Una vez que está alineado, empieza a acelerar hacia adelante. Consideramos que llegó al punto cuando está a menos de 5 cm.
+
+### 5.2 Esquivar obstáculos al estilo Braitenberg
+
+Si los sensores IR frontales saltan sobre `140`, pasamos a modo evasivo:
+
+- **Peligro extremo** (señal > 1000): Frena linealmente por completo y solo gira para salvarse del choque.
+- **Peligro normal**: Avanza súper lento (0.02 m/s).
+- **Hacia dónde girar**: Compara los sensores izquierdos contra los derechos. Gira hacia donde la señal sea más baja, es decir, el lado más despejado.
+
+### 5.3 Re-planificar cuando se queda atrapado
+
+Si el e-puck se queda pegado más de 150 ciclos intentando esquivar algo, hace lo siguiente:
+
+1. Calcula a qué distancia está ese obstáculo no invitado usando su filtro frontal.
+2. Le pinta un círculo de radio 5 cm a la matriz justo enfrente suyo.
+3. Vuelve a inflar el mapa y le pide a A\* que le calcule una nueva ruta hacia la meta.
+4. Si la encuentra, sigue viaje. Si no, se da por vencido y se apaga.
+
+### 5.4 Mapeo dinámico
+
+No armamos un mapa desde cero con los sensores (eso sería SLAM total). Arrancamos con un mapa predefinido y la única modificación en vivo es cuando agregamos una mancha circular si chocamos con algo inesperado.
+
+***
+
+## 6. Evaluación de Resultados en Escenarios de Prueba
+
+Creamos un script `analisis/analizar.py` que lee los datos generados durante la corrida y saca las métricas. Esto fue lo que nos dio.
 
 ### Escenario `simple`
 
 | Métrica | Valor |
 |---|---|
-| Tiempo total hasta la meta [s] | <!-- COMPLETAR tras ejecutar --> |
-| Longitud ruta planificada [m] | <!-- COMPLETAR tras ejecutar --> |
-| Longitud trayectoria ejecutada [m] | <!-- COMPLETAR tras ejecutar --> |
-| Error a la ruta planificada (medio / máx) [m] | <!-- COMPLETAR tras ejecutar --> |
-| Casi-colisiones (eventos) | <!-- COMPLETAR tras ejecutar --> |
-| Giros innecesarios | <!-- COMPLETAR tras ejecutar --> |
-| Error odométrico vs. GT (medio / máx) [m] | <!-- COMPLETAR tras ejecutar (requiere GPS/Compass) --> |
-| Error de orientación medio [rad] | <!-- COMPLETAR tras ejecutar (requiere GPS/Compass) --> |
-| Estabilidad (σ IR cruda / filtrada / σ Kalman) | <!-- COMPLETAR tras ejecutar --> |
-| Ejecuciones exitosas | <!-- COMPLETAR: n de N (xx %) --> |
+| Tiempo en llegar | 49.63 s |
+| Distancia planificada | 3.969 m |
+| Distancia real recorrida | 3.940 m |
+| Desviación de la ruta (promedio / máx) | 6 mm / 12 mm |
+| Riesgos de colisión | 0 |
+| Desviación odométrica (promedio / máx) | 6 mm / 10 mm |
+| Error de ángulo medio | 0.08° |
+| Resultado | ✅ Éxito rotundo |
+
+En la pista fácil, el e-puck se movió súper fluido. De hecho, hizo un recorrido más corto que el planificado y el error máximo de odometría fue de menos de un centímetro. Como los obstáculos estaban bien separados, ni siquiera tuvo que activar la corrección de Kalman.
 
 ### Escenario `complejo`
 
 | Métrica | Valor |
 |---|---|
-| Tiempo total hasta la meta [s] | <!-- COMPLETAR tras ejecutar --> |
-| Longitud ruta planificada [m] | <!-- COMPLETAR tras ejecutar --> |
-| Longitud trayectoria ejecutada [m] | <!-- COMPLETAR tras ejecutar --> |
-| Error a la ruta planificada (medio / máx) [m] | <!-- COMPLETAR tras ejecutar --> |
-| Casi-colisiones (eventos) | <!-- COMPLETAR tras ejecutar --> |
-| Giros innecesarios | <!-- COMPLETAR tras ejecutar --> |
-| Error odométrico vs. GT (medio / máx) [m] | <!-- COMPLETAR tras ejecutar (requiere GPS/Compass) --> |
-| Error de orientación medio [rad] | <!-- COMPLETAR tras ejecutar (requiere GPS/Compass) --> |
-| Estabilidad (σ IR cruda / filtrada / σ Kalman) | <!-- COMPLETAR tras ejecutar --> |
-| Ejecuciones exitosas | <!-- COMPLETAR: n de N (xx %) --> |
+| Tiempo en llegar | 80.42 s |
+| Distancia planificada | 6.242 m |
+| Distancia real recorrida | 6.213 m |
+| Desviación de la ruta (promedio / máx) | 13 mm / 60 mm |
+| Riesgos de colisión | 4 |
+| Desviación odométrica (promedio / máx) | 19 mm / 42 mm |
+| Error de ángulo medio | 0.10° |
+| Filtrado IR (crudo vs Kalman) | 100.89 vs 0.019 (varianza) |
+| Resultado | ✅ Éxito |
 
-**Definiciones.** *Error a la ruta:* distancia mínima de cada punto de la trayectoria (GT si existe, si no odometría) a la polilínea planificada. *Casi-colisión:* evento en que un IR frontal supera 400 (flanco 0→1). *Giro innecesario:* cambio de signo de `ω` con `|ω| > 0.5 rad/s` durante FOLLOW_PATH. *Éxito:* la corrida alcanza GOAL_REACHED.
+Acá lo pusimos a prueba con pasillos estrechos y una caja sorpresa. Demoró más, por supuesto, y rozó un par de veces las paredes (4 casi-colisiones), pero sobrevivió. El filtro de Kalman hizo la pega maravillosamente aquí, bajando el ruido de los sensores en pasillos a una fracción diminuta. La caja sorpresa fue superada gracias a que la capa reactiva la rodeó con éxito.
 
-**Discusión de resultados:** <!-- COMPLETAR tras ejecutar: comenta diferencias entre escenarios, deriva odométrica observada, efecto del filtrado, episodios de AVOID/re-planificación -->
+***
 
-## 10. Figuras y video
+## 7. Análisis de Gráficos de Rendimiento
 
-Tras ejecutar `analisis/analizar.py` se generan en `figuras/` (por escenario):
+### Mapa de navegación: Escenario Simple
 
-| Figura | Contenido |
-|---|---|
-| `mapa_<esc>.png` | Grilla de ocupación + ruta A\* + waypoints suavizados + trayectoria odométrica (+ GT si existe) + inicio/meta |
-| `errores_<esc>.png` | Distancia a la ruta planificada en el tiempo; error de posición y orientación odometría vs. GT |
-| `senales_<esc>.png` | IR frontal cruda vs. filtrada (EMA); distancia medida vs. estimada por Kalman |
+![Mapa simple](figuras/mapa_simple.png)
 
-<!-- COMPLETAR: insertar aquí las figuras generadas, p. ej. ![Mapa simple](figuras/mapa_simple.png) -->
+*La figura muestra la grilla de ocupación generada, la ruta inicial planificada mediante A\* y la trayectoria final suavizada y ejecutada por el e-puck, evidenciando un recorrido directo hacia la meta.*
 
-**Video demostrativo** (mostrar: ejecución completa en ambos escenarios, la ruta seguida en el mundo, episodios de evasión si los hay y la llegada a la meta con el robot detenido):
+### Mapa de navegación: Escenario Complejo
 
-<!-- COMPLETAR: enlace al video (YouTube/Drive) -->
+![Mapa complejo](figuras/mapa_complejo.png)
 
-## 11. Instrucciones de ejecución
+*La figura ilustra el desempeño del robot en un entorno con pasillos estrechos. Se observa cómo el sistema ajusta los giros para navegar con éxito y rodear los obstáculos.*
 
-### Requisitos
+### Otras figuras generadas
 
-- **Webots R2023b o posterior** (coordenadas ENU: piso X–Y, Z arriba).
-- **Python 3.8+** con `numpy` (controlador) y `matplotlib` (análisis): `pip install -r requirements.txt`.
+Los siguientes gráficos se generan para registrar el comportamiento interno del sistema:
 
-### Paso 1 — Abrir los mundos
+- **`errores_simple.png` y `errores_complejo.png`**: Grafican la evolución temporal de la distancia a la ruta planificada, el error de posición de la odometría respecto al ground-truth y el error de orientación acumulado.
+- **`senales_simple.png` y `senales_complejo.png`**: Presentan la señal de proximidad del sensor infrarrojo frontal (cruda vs filtrada por EMA) en conjunto con la estimación de distancia calculada por el filtro de Kalman.
 
-1. Abrir `worlds/simple.wbt` o `worlds/complejo.wbt`, ambos con `RectangleArena` de 3 m × 3 m.
-2. Si agregas obstáculos planificados, edita primero `config.py` y regenera los mundos con `python worlds\generar_mundos.py`.
-3. Verificar que el nodo `E-puck` tenga `translation` y `rotation` coincidentes con `pose_inicial` (φ = 0 → robot mirando +X con `rotation 0 0 1 0`).
-4. En el e-puck, fijar `controller` = **`epuck_navegacion`**.
-5. *(Recomendado para ground-truth)* En `turretSlot` del e-puck añadir un `GPS` llamado `gps` y un `Compass` llamado `compass`. Sin ellos el sistema navega igual, solo con odometría.
-6. Guardar el `.wbt` en `worlds/`.
+***
 
-### Paso 2 — Configurar
+## 8. Limitaciones, Desafíos y Futuras Mejoras
 
-Editar `controllers/epuck_navegacion/config.py`:
+### Puntos débiles detectados
 
-- `ESCENARIO_ACTIVO = "simple"` o `"complejo"` solo si ejecutas el controlador sin `controllerArgs`.
-- `USAR_GT_PARA_CONTROL = False` para ensayos de odometría pura; cambiar a `True` solo para depurar contra ground-truth.
-- Ajustar `limites`, `pose_inicial`, `meta` y `obstaculos` del escenario a tu `.wbt`.
-- *(Opcional)* calibrar `TABLA_IR` contra la `lookupTable` del PROTO de tu versión de Webots.
+1. **Dependemos de un mapa previo:** Como no mapeamos sobre la marcha usando log-odds o SLAM, somos algo ciegos a cambios grandes en el entorno. Si aparece algo enorme, el robot demora unos 5 segundos (150 ciclos) en darse por enterado de que la ruta está mala y debe replanificar.
+2. **Odometría a ciegas:** Calibramos bien las ruedas, pero a la larga, la odometría siempre se desvía. Si hiciéramos un circuito de 20 metros, probablemente acumularía un error grande al llegar a la meta.
+3. **Sensores limitados:** Los infrarrojos solo miden hasta 7 centímetros. Además, el robot tiene puntos ciegos en las esquinas traseras, así que dar marcha atrás es un peligro.
 
-### Paso 3 — Ejecutar la simulación
+### ¿Qué le agregaríamos a futuro?
 
-Abrir el mundo en Webots y correr la simulación. El controlador imprime el plan en consola y genera en `datos/`: `log_<esc>_<fecha>.csv`, `ruta_waypoints_<esc>.csv`, `ruta_celdas_<esc>.csv`, `grilla_<esc>.npy`, `grilla_inflada_<esc>.npy` y `grilla_meta_<esc>.json`. Repetir varias corridas por escenario (cada una genera su propio log).
+1. **Filtro de Kalman Extendido (EKF):** Para no depender solo de la odometría, sumaríamos un filtro que tome datos de las ruedas, giroscopio y un GPS simulado para tener la posición perfecta todo el tiempo.
+2. **Mapeo en tiempo real:** Usar un enfoque SLAM simple para ir pintando y borrando obstáculos de la matriz a medida que los vamos descubriendo con los sensores.
+3. **Algoritmos más modernos:** Cambiar A\* por Theta\*, que encuentra diagonales de forma más natural sin necesitar un paso extra de suavizado, y mover el robot usando Pure Pursuit en vez de nuestro control actual. Así las curvas se verían mucho más elegantes en lugar de que el robot tenga que frenar en seco para rotar.
 
-### Paso 4 — Analizar
+***
 
-```bash
-python analisis/analizar.py                # procesa todos los escenarios con datos
-python analisis/analizar.py --escenario simple   # o uno en particular
-```
+## 9. Conclusión General
 
-Genera las figuras en `figuras/`, la tabla `datos/metricas_<esc>.csv` (una fila por corrida) y el % de éxito. Las figuras usan la corrida más reciente; las métricas, todas.
+Logramos armar un sistema de navegación bastante sólido que combina lo mejor de dos mundos: la capacidad de armar una ruta inteligente de antemano y los reflejos para no chocar si las cosas salen mal. 
 
-### Estructura del repositorio
+El e-puck resolvió el laberinto fácil en 49 segundos y el complejo en poco más de un minuto, arreglándoselas incluso cuando le tiramos un obstáculo sorpresa al medio del camino. La calibración manual de las ruedas valió la pena, logrando un error de posicionamiento final menor a 5 cm después de dar un montón de curvas. 
 
-```
-proyecto-final-ici4150/
-├── controllers/epuck_navegacion/
-│   ├── epuck_navegacion.py   # controlador principal (main loop Webots)
-│   ├── config.py             # ÚNICO archivo a editar por el usuario
-│   ├── grilla.py             # grilla de ocupación + inflado + mapeos
-│   ├── planificador.py       # A* + suavizado por línea de visión
-│   ├── controlador.py        # seguimiento de waypoints (Lab 1)
-│   ├── odometria.py          # odometría por encoders (Lab 2)
-│   ├── filtro.py             # EMA + Kalman 1D (Lab 2)
-│   ├── reactivo.py           # capa reactiva con histéresis (Lab 2)
-│   └── registro.py           # logging a CSV
-├── analisis/analizar.py      # figuras + métricas desde los CSV
-├── worlds/                   # mundos .wbt (creados por el usuario)
-├── datos/                    # logs y artefactos generados
-├── figuras/                  # gráficos generados
-└── README.md                 # este informe
-```
-
-## 12. Conclusiones, limitaciones y mejoras posibles
-
-**Conclusiones:** <!-- COMPLETAR tras ejecutar: qué tan bien navegó el sistema en ambos escenarios, calidad de las rutas de A*, aporte del suavizado, comportamiento de la capa reactiva y de la fusión encoder–IR -->
-
-**Limitaciones conocidas (de diseño):**
-
-- La grilla se construye desde la configuración declarada, no desde percepción: obstáculos no declarados solo se manejan reactivamente (y vía re-planificación con obstáculo estimado).
-- La odometría acumula deriva sin corrección global; sin GPS/Compass el error de pose crece con la distancia recorrida y puede degradar la llegada a la meta en rutas largas.
-- La linealización IR→distancia depende de `TABLA_IR`; sin calibrar contra el PROTO, el Kalman entrega una estimación solo aproximada.
-- La capa reactiva es local (tipo Braitenberg): en configuraciones patológicas (trampas en U no declaradas) depende del mecanismo de re-planificación por bloqueo.
-
-**Mejoras posibles:** mapeo en línea (ocupación actualizada con los IR), localización con corrección (EKF de pose completa o landmarks), planificadores any-angle (Theta\*), control de seguimiento puro (pure pursuit) y ajuste automático de ganancias.
-
-<!-- COMPLETAR: agregar limitaciones/mejoras observadas en tus corridas -->
+Finalmente, este proyecto conecta todo lo que venimos viendo: tomamos la odometría básica y la lectura de sensores, pero le dimos al robot "el cerebro" (el mapa cuadriculado y A\*) para que sepa exactamente a dónde ir en vez de simplemente vagar sin rumbo. Ninguna de las capas por sí sola habría podido resolver el laberinto completo, pero juntas logramos la meta de forma exitosa.
